@@ -23,60 +23,71 @@ db = SQLAlchemy(app)
 class notes(db.Model):
     id_ = db.Column("id",db.Integer,primary_key=True)
     title = db.Column(db.String()) 
-    content = db.Column(db.String(500))
-    cration_date = db.Column(db.DateTime)
-    due_date = db.Column(db.DateTime)
-    
-    def __init__(self, title, content):
-        self.cration_date=datetime.now()
-        self.title = title 
-        self.content = content 
-
-class linotes(db.Model):
-    id_ = db.Column("id",db.Integer,primary_key=True)
-    title = db.Column(db.String())
     content = db.Column(db.String())
     cration_date = db.Column(db.DateTime)
     due_date = db.Column(db.DateTime)
+    type_ = db.Column(db.String())
 
-    def __init__(self, title, content):
+    def __init__(self, title, content,type_):
         self.cration_date=datetime.now()
         self.title = title 
         self.content = content 
-
-
-class connotes(db.Model):
-    id_ = db.Column("id",db.Integer,primary_key=True)
-    title = db.Column(db.String())
-    content = db.Column(db.String(5))
-    cration_date = db.Column(db.DateTime)
-    due_date = db.Column(db.DateTime)
-
-    def __init__(self, title, content):
-        self.cration_date=datetime.now()
-        self.title = title 
-        self.content = content 
+        self.type_ = type_
 
 
 
-@app.route('/linote', methods=["POST"])
-def linote():
+#note 
+@app.route('/note', methods=["POST"])
+def note():
     input_json = request.get_json(force=True) 
     action = input_json['action']
-    if action == "CREATE":
-        
+    
+    
+    if action == "CREATE_N":
+        if len(input_json['content']) < 500:
+            noteid = create_note(input_json)
+            return jsonify({"status":"note add", "noteid":noteid})
+        else:
+            return jsonify({"status":"note too long max 500 character"})
+    
+    
+    elif action == "CREATE_LI":
         sub_items = input_json['content'].split("|")
         for item in sub_items:
             if len(item) > 100:
-
                 return jsonify({"status":"Some of items was too long"})
         
         linoteid = create_linote(input_json)
         return jsonify({"status":"note add", "linoteid":linoteid})
-    
-    if action == "LIST_STATUS":
+
+        
+    elif action == "LIST_STATUS":
         change_subitem_status(input_json)
         return jsonify({"status":"linote update"}) 
+
+
+    elif action == "CREATE_CON":
+        for characters in input_json['content']:
+            if characters == " ":
+                 return jsonify({"status":"note content is no link"})
+            
+        con_noteid = create_con_note(input_json)
+        return jsonify({"status":"note add", "noteid":con_noteid})
+
+
+#note
+
+def create_note(json):
+    note = notes(json['title'], json['content'], "NOTE")
+    if len(json['due_date']) == 10:
+        note.due_date = datetime.fromtimestamp(int(json['due_date']))
+        print("Bad due_date")
+    db.session.add(note)
+    db.session.commit()
+    return note.id_
+
+
+#li_note
 
 def linote_string_to_list(x):
     x = x.split("|}")
@@ -90,7 +101,7 @@ def linote_string_to_list(x):
 def create_linote(json):
     sub_items = json['content'].replace("|","{|0|}")
     print(sub_items)
-    linote = linotes(json['title'], sub_items)
+    linote = notes(json['title'], sub_items,"LI_NOTE")
     if len(json['due_date']) == 10:
         linote.due_date = datetime.fromtimestamp(int(json['due_date']))
         print("Bad due_date")
@@ -99,7 +110,7 @@ def create_linote(json):
     return linote.id_
 
 def change_subitem_status(json):
-    linote = linotes.query.filter_by(id_ = json['note_id']).first()
+    linote = notes.query.filter_by(id_ = json['note_id']).first()
     linote_subitem = linote_string_to_list(linote.content)
     linote_subitem[int(json['note_order'])][1] = "1"
     linote_subitem_todb = ""
@@ -110,48 +121,12 @@ def change_subitem_status(json):
     db.session.commit()
     return
 
-@app.route('/nnote', methods=["POST"])
-def note():
-    input_json = request.get_json(force=True) 
-    action = input_json['action']
-    if action == "CREATE":
-        if len(input_json['content']) < 500:
-            noteid = create_note(input_json)
-            return jsonify({"status":"note add", "noteid":noteid})
-        else:
-            return jsonify({"status":"note too long max 500 character"})
-
-
-def create_note(json):
-    note = notes(json['title'], json['content'])
-    if len(json['due_date']) == 10:
-        note.due_date = datetime.fromtimestamp(int(json['due_date']))
-        print("Bad due_date")
-    db.session.add(note)
-    db.session.commit()
-    return note.id_
 
 
 #con_note
-
-
-@app.route('/connote', methods=["POST"])
-def con_note():
-    input_json = request.get_json(force=True) 
-    action = input_json['action']
-    if action == "CREATE":
-        for characters in input_json['content']:
-            if characters == " ":
-                 return jsonify({"status":"note content is no link"})
-            
-        con_noteid = create_con_note(input_json)
-        return jsonify({"status":"note add", "noteid":con_noteid})
-
-            
-
-
+   
 def create_con_note(json):
-    con_note = connotes(json['title'], json['content'])
+    con_note = notes(json['title'], json['content'],"CON_NOTE")
     if len(json['due_date']) == 10:
         con_note.due_date = datetime.fromtimestamp(int(json['due_date']))
         print("Bad due_date")
@@ -168,32 +143,31 @@ def find_note():
     action = input_json['action']
     if action == "ALL": 
         return jsonify(find_all())
-
-
-def find_all():
-    #note
-    notess = notes.query.all() #Zmienić tutaj nazwę prze pushem 
+    if action == "TYPE":
+        return jsonify(find_type(input_json['type']))
+    if action == "DATE":
+        pass
+def find_type(typee):
+    notess = notes.query.filter(notes.type_== typee)
     noutput = []
     for note in notess:
-        x = {"note_id":note.id_,"title":note.title, "content":note.content, "cration_date":str(note.cration_date),"due_date":str(note.due_date)} #trzeba by ło zamienić na tringa bo w json nie ma czegoś takiego jak data
+        if typee == "LI_NOTE":
+            x = {"noteType": note.type_,"note_id":note.id_,"title":note.title, "content":linote_string_to_list(note.content), "cration_date":str(note.cration_date)}
+        else:
+            x = {"noteType": note.type_,"note_id":note.id_,"title":note.title, "content":note.content, "cration_date":str(note.cration_date),"due_date":str(note.due_date)} #trzeba by ło zamienić na tringa bo w json nie ma czegoś takiego jak data
         noutput.append(x)
-    #linote
-    linotess = linotes.query.all()
-    lioutput = []
-    
-    for linote in linotess:
-        x = {"note_id":linote.id_,"title":linote.title, "content":linote_string_to_list(linote.content), "cration_date":str(linote.cration_date)}
-        lioutput.append(x)
+    return json.dumps({"notes":noutput})
 
-    #connote 
-    connotess = connotes.query.all()
-    conoutput = []
-
-    for connote in connotess:
-        x = {"note_id":connote.id_,"title":connote.title, "content":connote.content, "cration_date":str(connote.cration_date)}
-        conoutput.append(x)
-
-    return json.dumps({"notes":noutput,"linotes":lioutput,"connotes":conoutput})
+def find_all():
+    notess = notes.query.all() 
+    noutput = []
+    for note in notess:
+        if note.type_ == "LI_NOTE":
+            x = {"noteType": note.type_,"note_id":note.id_,"title":note.title, "content":linote_string_to_list(note.content), "cration_date":str(note.cration_date)}
+        else:
+            x = {"noteType": note.type_,"note_id":note.id_,"title":note.title, "content":note.content, "cration_date":str(note.cration_date),"due_date":str(note.due_date)} #trzeba by ło zamienić na tringa bo w json nie ma czegoś takiego jak data
+        noutput.append(x)
+    return json.dumps({"notes":noutput})
 
 
 
